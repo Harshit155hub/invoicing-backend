@@ -1,0 +1,27 @@
+CREATE TABLE IF NOT EXISTS invoices (
+  id SERIAL PRIMARY KEY,
+  invoice_number VARCHAR(50) UNIQUE,
+  customer_name VARCHAR(255) NOT NULL,
+  total_amount NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  finalized_at TIMESTAMPTZ,
+  paid_at TIMESTAMPTZ,
+  voided_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS invoice_items (
+  id SERIAL PRIMARY KEY,
+  invoice_id INTEGER REFERENCES invoices(id) ON DELETE CASCADE,
+  service VARCHAR(255) NOT NULL,
+  quantity INTEGER NOT NULL,
+  price NUMERIC(10, 2) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id SERIAL PRIMARY KEY,
+  invoice_id INTEGER REFERENCES invoices(id),
+  action VARCHAR(50) NOT NULL,
+  user_id VARCHAR(100),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
