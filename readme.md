@@ -1,48 +1,111 @@
 # Invoicing Backend
 
-A B2B automated invoicing system built with Express.js, PostgreSQL, BullMQ, and Redis.
+A backend system for B2B automated invoicing — built with Express.js, PostgreSQL, BullMQ, and Redis.
 
-## Local Setup
+I built this with three things in mind: state integrity, async processing that actually works under failure, and knowing exactly who did what and when.
 
-### With Docker (recommended)
+---
+
+## Project Structure
+invoicing-backend/
+├── src/
+│   ├── config/
+│   │   ├── db.js                  # PostgreSQL connection pool
+│   │   └── schema.sql             # Database schema (tables)
+│   ├── controllers/
+│   │   └── invoiceController.js   # All invoice logic (create, finalize, pay, void)
+│   ├── middleware/
+│   │   └── auth.js                # JWT authentication middleware
+│   ├── queues/
+│   │   └── invoiceQueue.js        # BullMQ queue definition
+│   ├── jobs/
+│   │   └── invoiceWorker.js       # Background worker (PDF + email simulation)
+│   ├── routes/
+│   │   └── invoiceRoutes.js       # API route definitions
+│   ├── app.js                     # Express app setup
+│   └── server.js                  # Entry point, starts server + worker
+├── .env.example                   # Environment variable template
+├── .gitignore                     # Ignores node_modules and .env
+├── compose.yml                    # Docker Compose (app + postgres + redis)
+├── Dockerfile                     # Docker image for the app
+├── package.json                   # Dependencies
+└── README.md                      # You are here
+
+---
+
+## Getting Started
+
+### With Docker (the easy way)
+
 ```bash
 docker-compose up --build
 ```
 
+This starts everything — the app, PostgreSQL, and Redis — all wired together. No manual setup needed.
+
 ### Without Docker
-1. Make sure PostgreSQL and Redis are running locally
+
+1. Make sure PostgreSQL and Redis are running on your machine
 2. Run the schema: `psql -U postgres invoicedb < src/config/schema.sql`
-3. Copy `.env.example` to `.env` and fill in values
+3. Copy `.env.example` to `.env` and fill in your values
 4. `npm install && node src/server.js`
+
+---
+
+## Environment Variables
+PORT=3000
+DB_HOST=db
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=your_password_here
+DB_NAME=invoicedb
+REDIS_HOST=redis
+REDIS_PORT=6379
+JWT_SECRET=your_secret_key_here
+
+---
 
 ## API Endpoints
 
+Every route requires an `Authorization: Bearer <token>` header.
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | /api/invoices | Create invoice (DRAFT) |
-| GET | /api/invoices/:id | Get invoice + items |
-| PATCH | /api/invoices/:id | Update DRAFT invoice |
-| POST | /api/invoices/:id/finalize | DRAFT → FINALIZED |
-| POST | /api/invoices/:id/pay | FINALIZED → PAID |
-| POST | /api/invoices/:id/void | Any → VOID (except PAID) |
+| POST | /api/invoices | Create a new invoice (starts as DRAFT) |
+| GET | /api/invoices/:id | Fetch invoice with all line items |
+| PATCH | /api/invoices/:id | Edit an invoice (DRAFT only) |
+| POST | /api/invoices/:id/finalize | Move from DRAFT to FINALIZED |
+| POST | /api/invoices/:id/pay | Mark a FINALIZED invoice as PAID |
+| POST | /api/invoices/:id/void | Void an invoice (not allowed once PAID) |
 
-All routes require `Authorization: Bearer <token>` header.
+---
 
-## Architecture Decisions
+## How the State Machine Works
+DRAFT ──→ FINALIZED ──→ PAID
+│              │
+└──────────────└──→ VOID
 
-**Why BullMQ over setTimeout?**
-setTimeout blocks the event loop and has zero retry logic. BullMQ persists jobs in Redis — 
-if the server crashes mid-job, the job survives and retries. That matters in production billing systems.
+- **DRAFT** — The invoice is still being worked on. You can edit line items and customer details freely.
+- **FINALIZED** — The invoice is locked. A unique invoice number gets generated at this point, and background jobs kick off to handle PDF generation and email dispatch without holding up the API response.
+- **PAID** — Done. Nothing can change it after this.
+- **VOID** — Can be reached from DRAFT or FINALIZED, but once something is PAID it's untouchable.
 
-**Why database transactions?**
-Creating an invoice involves two tables (invoices + invoice_items). Without a transaction, a crash 
-halfway through leaves an invoice with no items. BEGIN/COMMIT/ROLLBACK makes it atomic.
+---
 
-**Why JWT middleware on every route?**
-The audit log requirement explicitly asks for user IDs on state changes. Without auth middleware, 
-you have no idea who finalized or paid what.
+## Why I Made These Choices
 
-**State Machine**
-DRAFT → FINALIZED → PAID are the happy path. VOID can be reached from DRAFT or FINALIZED. 
-Once PAID, the invoice is immutable — no voids, no edits. Line items are locked on finalization 
-by enforcing the status check before any write.
+**BullMQ instead of setTimeout**
+
+I initially could have just used setTimeout to simulate the background jobs — it would have worked for a demo. But setTimeout isn't a real queue. If the server goes down while a job is running, that job is just gone. BullMQ persists jobs in Redis, retries on failure, and gives you visibility into what's running and what failed. For something like invoice delivery, that reliability actually matters.
+
+**Database transactions everywhere**
+
+When you create an invoice, you're writing to two tables at once — the invoice itself and its line items. I wrapped every multi-step operation in a transaction so if anything fails halfway through, the whole thing rolls back cleanly. No orphaned invoices, no missing line items.
+
+**JWT on every route**
+
+The audit trail needs to know who did what. If I don't enforce auth on every route, I can't reliably capture user IDs on state changes. JWT keeps it stateless — no sessions to manage, and it scales fine.
+
+**Immutability after finalization**
+
+Once an invoice goes out to a client it's basically a document of record. Letting it be edited after that point would create accounting headaches and break trust. So I enforce the status check at the application layer before any write operation — not just at the database level.
