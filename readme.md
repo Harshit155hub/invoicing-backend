@@ -8,31 +8,36 @@ I built this with three things in mind: state integrity, async processing that a
 
 ## Project Structure
 invoicing-backend/
+│
 ├── src/
 │   ├── config/
-│   │   ├── db.js                  # PostgreSQL connection pool
-│   │   └── schema.sql             # Database schema (tables)
+│   │   ├── db.js
+│   │   └── schema.sql
+│   │
 │   ├── controllers/
-│   │   └── invoiceController.js   # All invoice logic (create, finalize, pay, void)
+│   │   └── invoiceController.js
+│   │
 │   ├── middleware/
-│   │   └── auth.js                # JWT authentication middleware
-│   ├── queues/
-│   │   └── invoiceQueue.js        # BullMQ queue definition
-│   ├── jobs/
-│   │   └── invoiceWorker.js       # Background worker (PDF + email simulation)
+│   │   └── auth.js
+│   │
 │   ├── routes/
-│   │   └── invoiceRoutes.js       # API route definitions
-│   ├── app.js                     # Express app setup
-│   └── server.js                  # Entry point, starts server + worker
-├── .env.example                   # Environment variable template
-├── .gitignore                     # Ignores node_modules and .env
-├── compose.yml                    # Docker Compose (app + postgres + redis)
-├── Dockerfile                     # Docker image for the app
-├── package.json                   # Dependencies
-└── README.md                      # You are here
-
----
-
+│   │   └── invoiceRoutes.js
+│   │
+│   ├── queues/
+│   │   └── invoiceQueue.js
+│   │
+│   ├── jobs/
+│   │   └── invoiceWorker.js
+│   │
+│   ├── app.js
+│   └── server.js
+│
+├── .env.example
+├── .gitignore
+├── compose.yml
+├── Dockerfile
+├── package.json
+└── README.md
 ## Getting Started
 
 ### With Docker (the easy way)
